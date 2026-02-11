@@ -14,7 +14,9 @@ function getTimeContext(timezone?: string): { timeOfDay: string; greeting: strin
     try {
       const formatted = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: timezone }).format(now);
       hour = parseInt(formatted);
-    } catch { /* fallback to UTC */ }
+    } catch {
+      /* fallback to UTC */
+    }
   }
 
   if (hour >= 5 && hour < 12) return { timeOfDay: "morning", greeting: "good morning", mood: "fresh, gentle, waking-up energy" };
@@ -42,14 +44,17 @@ function detectEmotion(message: string): string {
   return "neutral";
 }
 
+/**
+ * Calls OpenAI Chat Completions API
+ */
 async function callAI(body: Record<string, unknown>, stream = false) {
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not configured in Supabase secrets");
 
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -57,10 +62,12 @@ async function callAI(body: Record<string, unknown>, stream = false) {
 
   if (!response.ok) {
     const t = await response.text();
-    console.error("AI error:", response.status, t);
+    console.error("OpenAI error:", response.status, t);
+
     if (response.status === 429) return { error: "Rate limited", status: 429 };
     if (response.status === 402) return { error: "Credits exhausted", status: 402 };
-    throw new Error("AI gateway error");
+
+    return { error: `OpenAI API error: ${response.status}`, status: response.status };
   }
 
   if (stream) return { stream: response };
@@ -85,7 +92,7 @@ serve(async (req) => {
       const { sampleMessages, myTexts, partnerTexts, meName, otherName } = body;
 
       const result = await callAI({
-        model: "google/gemini-3-flash-preview",
+        model: "gpt-4o-mini",
         messages: [
           {
             role: "system",
@@ -104,71 +111,92 @@ Return valid JSON with keys: summary, partnerStyle, styleProfile`,
             content: `Full chat:\n${sampleMessages}\n\n${otherName}'s messages:\n${partnerTexts}\n\n${meName}'s messages:\n${myTexts}`,
           },
         ],
-        tools: [{
-          type: "function",
-          function: {
-            name: "return_analysis",
-            description: "Return the chat analysis",
-            parameters: {
-              type: "object",
-              properties: {
-                summary: { type: "string" },
-                partnerStyle: { type: "string" },
-                styleProfile: { type: "string" },
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "return_analysis",
+              description: "Return the chat analysis",
+              parameters: {
+                type: "object",
+                properties: {
+                  summary: { type: "string" },
+                  partnerStyle: { type: "string" },
+                  styleProfile: { type: "string" },
+                },
+                required: ["summary", "partnerStyle", "styleProfile"],
+                additionalProperties: false,
               },
-              required: ["summary", "partnerStyle", "styleProfile"],
-              additionalProperties: false,
             },
           },
-        }],
+        ],
         tool_choice: { type: "function", function: { name: "return_analysis" } },
       });
 
       if ("error" in result) return errorResponse(result.error as string, result.status as number);
+
       const toolCall = (result.data as any).choices?.[0]?.message?.tool_calls?.[0];
-      if (toolCall) return new Response(toolCall.function.arguments, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      return new Response(JSON.stringify({ summary: "", partnerStyle: "", styleProfile: "" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (toolCall) {
+        return new Response(toolCall.function.arguments, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ summary: "", partnerStyle: "", styleProfile: "" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // ─── Suggest Replies ───
     if (body.action === "suggest-replies") {
-      const { lastMessage, memorySummary, partnerStyle, meName, otherName } = body;
+      const { lastMessage, memorySummary, partnerStyle, styleProfile, meName, otherName } = body;
 
       const result = await callAI({
-        model: "google/gemini-3-flash-preview",
+        model: "gpt-4o-mini",
         messages: [
           {
             role: "system",
             content: `You help ${meName} reply to ${otherName}. Based on their texting style and relationship, suggest 3 short quick replies that ${meName} would naturally send. Each reply should be 3-10 words, casual, matching ${meName}'s style.
 
 Context: ${memorySummary}
-${meName}'s style: ${partnerStyle}`,
+${otherName}'s style: ${partnerStyle}
+${meName}'s style: ${styleProfile}`,
           },
           {
             role: "user",
             content: `${otherName} just said: "${lastMessage}"\n\nGive 3 quick reply options for ${meName}.`,
           },
         ],
-        tools: [{
-          type: "function",
-          function: {
-            name: "return_suggestions",
-            description: "Return reply suggestions",
-            parameters: {
-              type: "object",
-              properties: { replies: { type: "array", items: { type: "string" } } },
-              required: ["replies"],
-              additionalProperties: false,
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "return_suggestions",
+              description: "Return reply suggestions",
+              parameters: {
+                type: "object",
+                properties: { replies: { type: "array", items: { type: "string" } } },
+                required: ["replies"],
+                additionalProperties: false,
+              },
             },
           },
-        }],
+        ],
         tool_choice: { type: "function", function: { name: "return_suggestions" } },
       });
 
       if ("error" in result) return errorResponse(result.error as string, result.status as number);
+
       const toolCall = (result.data as any).choices?.[0]?.message?.tool_calls?.[0];
-      if (toolCall) return new Response(toolCall.function.arguments, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      return new Response(JSON.stringify({ replies: [] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (toolCall) {
+        return new Response(toolCall.function.arguments, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ replies: [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // ─── Chat Reply (streaming) ───
@@ -208,7 +236,7 @@ ABSOLUTE RULES — FOLLOW STRICTLY:
 
 EXAMPLES OF CORRECT LENGTH:
 - "hii jaanu 💗"
-- "acha batao kya hua 😂"  
+- "acha batao kya hua 😂"
 - "miss you so much 🥺"
 - "haan bolo na jaan 💗"
 - "pagal ho kya 😭😂"`;
@@ -227,11 +255,26 @@ EXAMPLES OF CORRECT LENGTH:
 
     messages.push({ role: "user", content: message });
 
-    const result = await callAI({ model: "google/gemini-3-flash-preview", messages, stream: true, max_tokens: 60 }, true);
+    const result = await callAI(
+      {
+        model: "gpt-4o-mini",
+        messages,
+        stream: true,
+        max_tokens: 60,
+        temperature: 0.9,
+      },
+      true
+    );
+
     if ("error" in result) return errorResponse(result.error as string, result.status as number);
 
     return new Response((result as any).stream.body, {
-      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
     });
   } catch (e) {
     console.error("Error:", e);
