@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 270 20% 6%;
+    --foreground: 300 10% 92%;
+
+    --card: 270 18% 10%;
+    --card-foreground: 300 10% 92%;
+
+    --popover: 270 18% 10%;
+    --popover-foreground: 300 10% 92%;
+
+    --primary: 340 65% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 270 15% 15%;
+    --secondary-foreground: 300 10% 85%;
+
+    --muted: 270 12% 18%;
+    --muted-foreground: 270 10% 55%;
+
+    --accent: 320 60% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 270 12% 16%;
+    --input: 270 12% 16%;
+    --ring: 340 65% 55%;
+
+    --radius: 1rem;
+
+    --chat-ai: 270 18% 14%;
+    --chat-ai-foreground: 300 10% 90%;
+    --chat-me: 340 50% 25%;
+    --chat-me-foreground: 300 10% 95%;
+    --chat-composer: 270 18% 9%;
+
+    --glow-primary: 340 65% 55%;
+    --glow-accent: 280 60% 50%;
+
+    --sidebar-background: 270 20% 5%;
+    --sidebar-foreground: 300 10% 90%;
+    --sidebar-primary: 340 65% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 270 15% 15%;
+    --sidebar-accent-foreground: 300 10% 90%;
+    --sidebar-border: 270 12% 14%;
+    --sidebar-ring: 340 65% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  }
+
+  ::-webkit-scrollbar {
+    width: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+}
+
+@layer utilities {
+  .glow-primary {
+    box-shadow: 0 0 30px -5px hsl(var(--glow-primary) / 0.3),
+                0 0 60px -10px hsl(var(--glow-accent) / 0.15);
+  }
+  .glow-text {
+    text-shadow: 0 0 20px hsl(var(--glow-primary) / 0.4);
+  }
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+  }
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
